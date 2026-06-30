@@ -12,6 +12,7 @@ L.Icon.Default.mergeOptions({
 
 
 
+
 //biến toàn cục
 var serviceMarkers = [];
 var currentLat = null;
@@ -105,6 +106,7 @@ document.getElementById("btnLocate").onclick = function () {
 };
 
 // Khi tìm thấy vị trí
+
 map.on("locationfound", function (e) {
 
     var latlng = e.latlng;
@@ -134,6 +136,40 @@ map.on("locationfound", function (e) {
 map.on("locationerror", function () {
     alert("Không lấy được vị trí. Hãy bật GPS hoặc cho phép quyền truy cập.");
 });
+
+
+var userMarker = null;
+
+map.on("locationfound", function (e) {
+
+    centerPoint = e.latlng;   // 🔥 LƯU vị trí GPS
+
+    // 🔥 Xóa marker cũ nếu có
+    if (userMarker) {
+        map.removeLayer(userMarker);
+    }
+
+    userMarker = L.marker(centerPoint)
+        .addTo(map)
+        .bindPopup("Bạn đang ở đây")
+        .openPopup();
+
+    console.log("GPS:", centerPoint.lat, centerPoint.lng);
+});
+
+
+
+
+
+
+
+
+
+
+
+
+
+
 
 
 
@@ -285,13 +321,13 @@ function findAllOSM(type, radius) {
     var lat = centerPoint.lat;
     var lon = centerPoint.lng;
 
-    // 🔥 Xóa route cũ
+    // Xóa route cũ
     if (routeLayer) {
         map.removeLayer(routeLayer);
         routeLayer = null;
     }
 
-    // 🔥 Xóa marker cũ
+    // Xóa marker cũ
     if (serviceMarkers && serviceMarkers.length > 0) {
         serviceMarkers.forEach(marker => map.removeLayer(marker));
     }
@@ -302,27 +338,31 @@ function findAllOSM(type, radius) {
     var btnRoute = document.getElementById("btnRoute");
     if (btnRoute) btnRoute.disabled = true;
 
-    // 🔥 Query tối ưu (KHÔNG relation, giới hạn 100 để tránh 504)
+    // Query Overpass tối ưu
     var query = `
-[out:json][timeout:15];
+[out:json][timeout:25];
 (
   node["amenity"="${type}"](around:${radius},${lat},${lon});
   way["amenity"="${type}"](around:${radius},${lat},${lon});
 );
-out center 100;
+out center 50;
 `;
 
     fetch("https://overpass.kumi.systems/api/interpreter", {
         method: "POST",
         body: query
     })
-        .then(response => {
-            if (!response.ok) {
-                throw new Error("HTTP " + response.status);
+        .then(res => res.text()) // đọc dạng text trước
+        .then(text => {
+
+            // Nếu server trả XML (thường là lỗi)
+            if (text.startsWith("<")) {
+                console.error("Overpass trả lỗi XML:", text);
+                alert("Overpass đang quá tải, hãy thử lại!");
+                return;
             }
-            return response.json();
-        })
-        .then(data => {
+
+            const data = JSON.parse(text);
 
             if (!data.elements || data.elements.length === 0) {
                 alert("Không tìm thấy trong phạm vi đã chọn!");
@@ -338,7 +378,8 @@ out center 100;
                 if (el.type === "node") {
                     elLat = el.lat;
                     elLon = el.lon;
-                } else if (el.center) {
+                }
+                else if (el.center) {
                     elLat = el.center.lat;
                     elLon = el.center.lon;
                 }
@@ -356,7 +397,7 @@ out center 100;
 
             }).filter(x => x !== null);
 
-            // 🔥 Sắp xếp gần → xa
+            // Sắp xếp gần → xa
             results.sort((a, b) => a.distance - b.distance);
 
             results.forEach(item => {
@@ -370,7 +411,6 @@ out center 100;
                         "Khoảng cách: " + (item.distance / 1000).toFixed(2) + " km"
                     );
 
-                // 🔥 Khi click marker → lưu vào selectedDestination
                 marker.on("click", function () {
                     selectedDestination = serviceLatLng;
                     if (btnRoute) btnRoute.disabled = false;
@@ -389,9 +429,100 @@ out center 100;
         })
         .catch(err => {
             console.error("Overpass lỗi:", err);
-            alert("Overpass quá tải hoặc lỗi mạng!");
+            alert("Lỗi mạng hoặc Overpass quá tải!");
         });
 }
+
+
+// Hàm tìm tất cả điểm quanh vị trí hiện tại (DÙNG DATABASE - NHANH HƠN)
+// function findAllOSM(type, radius) {
+
+//     if (!centerPoint) {
+//         alert("Hãy lấy vị trí hoặc tìm kiếm địa điểm trước!");
+//         return;
+//     }
+
+//     if (!radius || isNaN(radius)) {
+//         alert("Bán kính không hợp lệ!");
+//         return;
+//     }
+
+//     radius = parseInt(radius);
+
+//     var lat = centerPoint.lat;
+//     var lon = centerPoint.lng;
+
+//     // 🔥 Xóa route cũ
+//     if (routeLayer) {
+//         map.removeLayer(routeLayer);
+//         routeLayer = null;
+//     }
+
+//     // 🔥 Xóa marker cũ
+//     if (serviceMarkers && serviceMarkers.length > 0) {
+//         serviceMarkers.forEach(marker => map.removeLayer(marker));
+//     }
+//     serviceMarkers = [];
+
+//     selectedDestination = null;
+
+//     var btnRoute = document.getElementById("btnRoute");
+//     if (btnRoute) btnRoute.disabled = true;
+
+//     // 🔥 GỌI API TỪ DATABASE (KHÔNG DÙNG OVERPASS NỮA)
+//     fetch(`/api/nearby/${type}?lat=${lat}&lng=${lon}&radius=${radius}`)
+//         .then(response => {
+//             if (!response.ok) {
+//                 throw new Error("Server lỗi " + response.status);
+//             }
+//             return response.json();
+//         })
+//         .then(data => {
+
+//             if (!data || data.length === 0) {
+//                 alert("Không tìm thấy trong phạm vi đã chọn!");
+//                 return;
+//             }
+
+//             var userLatLng = L.latLng(lat, lon);
+
+//             data.forEach(item => {
+
+//                 var serviceLatLng = L.latLng(item.lat, item.lng);
+
+//                 var distance = userLatLng.distanceTo(serviceLatLng);
+
+//                 var marker = L.marker(serviceLatLng)
+//                     .addTo(map)
+//                     .bindPopup(
+//                         "<b>" + (item.name || "Không tên") + "</b><br>" +
+//                         "Khoảng cách: " + (distance / 1000).toFixed(2) + " km"
+//                     );
+
+//                 // click marker để chọn điểm chỉ đường
+//                 marker.on("click", function () {
+//                     selectedDestination = serviceLatLng;
+//                     if (btnRoute) btnRoute.disabled = false;
+//                 });
+
+//                 serviceMarkers.push(marker);
+
+//             });
+
+//             alert("Tìm thấy " + serviceMarkers.length + " địa điểm!");
+
+//             if (serviceMarkers.length > 0) {
+//                 var group = L.featureGroup(serviceMarkers);
+//                 map.fitBounds(group.getBounds());
+//             }
+
+//         })
+//         .catch(err => {
+//             console.error("Server lỗi:", err);
+//             alert("Lỗi server hoặc mạng!");
+//         });
+// }
+
 
 
 // Nút tìm tất cả
@@ -407,7 +538,6 @@ document.getElementById("btnFindAll").onclick = function () {
 
     findAllOSM(selectedType, selectedRadius);
 };
-
 
 
 
@@ -594,33 +724,6 @@ document.getElementById("btnSearchAddress").onclick = function () {
 
 
 
-var centerPoint = null;   // 🔥 vị trí trung tâm duy nhất
-var userMarker = null;    // marker vị trí người dùng
-
-map.on("locationfound", function (e) {
-
-    centerPoint = e.latlng;   // 🔥 LƯU vị trí GPS
-
-    // 🔥 Xóa marker cũ nếu có
-    if (userMarker) {
-        map.removeLayer(userMarker);
-    }
-
-    userMarker = L.marker(centerPoint)
-        .addTo(map)
-        .bindPopup("Bạn đang ở đây")
-        .openPopup();
-
-    console.log("GPS:", centerPoint.lat, centerPoint.lng);
-});
-
-
-
-
-
-
-
-
 
 
 //them 
@@ -629,6 +732,7 @@ let markerLayer = L.layerGroup().addTo(map);
 
 // ====== BIẾN CHẾ ĐỘ THÊM ======
 let isAddMode = false;
+let isSending = false; // 🔥 chống spam click
 
 // ====== NÚT BẬT CHẾ ĐỘ THÊM ======
 document.getElementById("btnAdd").addEventListener("click", function () {
@@ -645,43 +749,74 @@ document.getElementById("btnAdd").addEventListener("click", function () {
 
 
 // ====== CLICK MAP ĐỂ THÊM ======
-map.on("click", function (e) {
+map.on("click", async function (e) {
 
     if (!isAddMode) return;
+
+    // 🔥 chỉ cho thêm 1 lần
+    isAddMode = false;
+    document.getElementById("btnAdd").style.backgroundColor = "";
+
+    if (isSending) return;
+    isSending = true;
 
     const type = document.getElementById("serviceType").value;
     const name = prompt("Nhập tên:");
 
-    if (!name) return;
+    // ❌ nếu bấm cancel hoặc rỗng
+    if (!name || name.trim() === "") {
+        isSending = false;
+        return;
+    }
 
-    fetch(`/api/add/${type}`, {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-            name: name,
-            lat: e.latlng.lat,
-            lng: e.latlng.lng
-        })
-    })
-        .then(res => res.json())
-        .then(data => {
+    const payload = {
+        name: name.trim(),
+        lat: Number(e.latlng.lat),
+        lng: Number(e.latlng.lng)
+    };
 
-            if (!data.success) {
-                alert("Lỗi thêm dữ liệu!");
-                return;
-            }
+    console.log("SEND DATA:", payload); // 🔥 debug
 
-            alert("Thêm thành công!");
-
-            // reload lại toàn bộ marker (an toàn nhất)
-            loadAll();
-        })
-        .catch(err => {
-            console.error(err);
-            alert("Lỗi server!");
+    try {
+        const res = await fetch(`http://localhost:8081/api/add/${type}`, {
+            method: "POST",
+            headers: {
+                "Content-Type": "application/json"
+            },
+            body: JSON.stringify(payload)
         });
 
+        const text = await res.text();
+        console.log("RESPONSE:", text);
+
+        let data;
+        try {
+            data = JSON.parse(text);
+        } catch {
+            throw new Error("Server không trả JSON");
+        }
+
+        if (!res.ok || !data.success) {
+            throw new Error(data.message || "Thêm thất bại");
+        }
+
+        alert("Thêm thành công!");
+
+        // 🔥 reload marker
+        loadAll();
+
+    } catch (err) {
+        console.error("ADD ERROR:", err);
+        alert("Lỗi: " + err.message);
+    } finally {
+        isSending = false;
+    }
 });
+
+
+
+
+
 
 
 // ====== LOAD TẤT CẢ ======
@@ -689,7 +824,7 @@ function loadAll() {
 
     markerLayer.clearLayers();
 
-    // 🔥 CHỈNH Ở ĐÂY nếu đổi tên bảng
+
     const types = ["school1", "hospital", "atm"];
 
     types.forEach(type => {
@@ -743,4 +878,62 @@ function deletePoint(type, id) {
 
 // ====== GỌI KHI MỞ TRANG ======
 loadAll();
+
+
+
+
+
+//dang suat
+document.getElementById("btnLogout").addEventListener("click", function () {
+
+    if (!confirm("Bạn có chắc muốn đăng xuất?")) return;
+
+    // Xóa user khỏi localStorage
+    localStorage.removeItem("user");
+
+    alert("Đã đăng xuất!");
+
+    // quay về login
+    window.location.href = "/login.html";
+});
+
+
+
+const user = localStorage.getItem("user");
+
+if (!user) {
+    window.location.href = "/login.html";
+}
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
 

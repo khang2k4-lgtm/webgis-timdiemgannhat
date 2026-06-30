@@ -55,3 +55,18 @@
     background-color: rgb(128, 49, 49);
     transform: scale(1.1);
 }
+
+
+#btnLogout {
+    background: #d32f2f;
+    color: white;
+    border: none;
+    padding: 6px 10px;
+    border-radius: 6px;
+    cursor: pointer;
+    margin-top: 5px;
+}
+
+#btnLogout:hover {
+    opacity: 0.9;
+}
